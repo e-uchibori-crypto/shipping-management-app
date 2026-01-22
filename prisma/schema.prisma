@@ -1,0 +1,185 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum ValueType {
+  FORECAST
+  ACTUAL
+  SYSTEM
+}
+
+enum SourceType {
+  MANUAL
+  IMPORT
+  AUTO
+}
+
+enum MetricCategory {
+  INVENTORY
+  INBOUND
+  OUTBOUND
+  FINANCE
+  VARIANCE
+  OTHER
+}
+
+enum MetricDirection {
+  IN
+  OUT
+  BALANCE
+}
+
+enum AuditAction {
+  LOGIN
+  LOGOUT
+  CREATE
+  UPDATE
+  DELETE
+  IMPORT
+  MEETING_ADJUST
+}
+
+model User {
+  id           String     @id @default(cuid())
+  username     String     @unique
+  displayName  String
+  passwordHash String
+  role         String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  sessions     Session[]
+  auditLogs    AuditLog[]
+  createdLogs  MetricValue[] @relation("CreatedBy")
+  updatedLogs  MetricValue[] @relation("UpdatedBy")
+  meetingNotes MeetingNote[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Product {
+  id              String        @id @default(cuid())
+  code            String        @unique
+  name            String?
+  leadTimeMonths  Int           @default(3)
+  targetStock     Int           @default(0)
+  usesDualLocation Boolean      @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  metrics          MetricValue[]
+  meetingNotes     MeetingNote[]
+}
+
+model Location {
+  id       String        @id @default(cuid())
+  code     String        @unique
+  name     String
+  metrics  MetricValue[]
+}
+
+model MetricDefinition {
+  id         String          @id @default(cuid())
+  key        String          @unique
+  label      String
+  category   MetricCategory
+  direction  MetricDirection
+  isEditable Boolean         @default(true)
+  isCombined Boolean         @default(false)
+  createdAt  DateTime        @default(now())
+  metrics    MetricValue[]
+}
+
+model MetricValue {
+  id         String           @id @default(cuid())
+  productId  String
+  locationId String?
+  metricId   String
+  period     DateTime
+  value      Int
+  valueType  ValueType        @default(FORECAST)
+  source     SourceType       @default(MANUAL)
+  createdById String?
+  updatedById String?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  product    Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  location   Location?        @relation(fields: [locationId], references: [id])
+  metric     MetricDefinition @relation(fields: [metricId], references: [id])
+  createdBy  User?            @relation("CreatedBy", fields: [createdById], references: [id])
+  updatedBy  User?            @relation("UpdatedBy", fields: [updatedById], references: [id])
+
+  @@index([productId, period])
+  @@index([metricId, period])
+  @@index([valueType, period])
+}
+
+model ForecastSnapshot {
+  id            String     @id @default(cuid())
+  productId     String
+  metricId      String
+  period        DateTime
+  forecastValue Int
+  actualValue   Int?
+  createdById   String?
+  createdAt     DateTime   @default(now())
+  product       Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  metric        MetricDefinition @relation(fields: [metricId], references: [id])
+  createdBy     User?      @relation(fields: [createdById], references: [id])
+
+  @@index([productId, period])
+}
+
+model MeetingNote {
+  id         String     @id @default(cuid())
+  productId  String
+  metricId   String?
+  period     DateTime
+  decision   String
+  comment    String?
+  createdById String?
+  createdAt  DateTime   @default(now())
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  metric     MetricDefinition? @relation(fields: [metricId], references: [id])
+  createdBy  User?      @relation(fields: [createdById], references: [id])
+
+  @@index([productId, period])
+}
+
+model ImportJob {
+  id        String   @id @default(cuid())
+  source    String
+  status    String
+  payload   Json
+  createdById String?
+  createdAt DateTime @default(now())
+  createdBy User?    @relation(fields: [createdById], references: [id])
+}
+
+model AuditLog {
+  id          String       @id @default(cuid())
+  userId      String?
+  action      AuditAction
+  entityType  String
+  entityId    String?
+  field       String?
+  beforeValue String?
+  afterValue  String?
+  reason      String?
+  metadata    Json?
+  createdAt   DateTime     @default(now())
+  user        User?        @relation(fields: [userId], references: [id])
+
+  @@index([entityType, createdAt])
+  @@index([userId, createdAt])
+}
